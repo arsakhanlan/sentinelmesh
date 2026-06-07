@@ -267,6 +267,7 @@ export default function MicrosoftPage() {
       >
         {report ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Naked agent — always static benchmark (SentinelMesh never sees naked traffic) */}
             <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-5">
               <div className="text-[10px] font-semibold uppercase tracking-widest text-red-300/80">
                 Naked agent (benchmark)
@@ -278,29 +279,63 @@ export default function MicrosoftPage() {
                 {report.naked.successes} of {report.naked.total_attempts} attacks succeeded
               </div>
             </div>
-            <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-5">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-300/80">
-                SentinelMesh-protected (benchmark)
+
+            {/* SentinelMesh-protected — live from the backend when available */}
+            {liveRedTeam && liveRedTeam.total_attacks > 0 ? (
+              <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-5">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-300/80 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  SentinelMesh-protected (live)
+                </div>
+                <div className="mono text-4xl font-bold text-emerald-400 mt-1">
+                  {pct(liveRedTeam.asr)}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-2">
+                  {liveRedTeam.allowed} of {liveRedTeam.total_attacks} tool calls allowed
+                </div>
               </div>
-              <div className="mono text-4xl font-bold text-emerald-400 mt-1">
-                {pct(report.comparison.sentinel_asr)}
+            ) : (
+              <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-5">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-300/80">
+                  SentinelMesh-protected (benchmark)
+                </div>
+                <div className="mono text-4xl font-bold text-emerald-400 mt-1">
+                  {pct(report.comparison.sentinel_asr)}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-2">
+                  {report.sentinel.successes} of {report.sentinel.total_attempts} attacks succeeded
+                </div>
               </div>
-              <div className="text-[11px] text-slate-400 mt-2">
-                {report.sentinel.successes} of {report.sentinel.total_attempts} attacks succeeded
+            )}
+
+            {/* Reduction / Block rate — live when backend data exists */}
+            {liveRedTeam && liveRedTeam.total_attacks > 0 ? (
+              <div className="rounded-lg border border-cyan-500/40 bg-cyan-500/5 p-5">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-cyan-300/80">
+                  Block Rate (live)
+                </div>
+                <div className="mono text-4xl font-bold text-cyan-300 mt-1">
+                  {pct(1 - liveRedTeam.asr)}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-2">
+                  {liveRedTeam.blocked} of {liveRedTeam.total_attacks} tool calls blocked ·{" "}
+                  {liveRedTeam.sessions_24h} sessions
+                </div>
               </div>
-            </div>
-            <div className="rounded-lg border border-cyan-500/40 bg-cyan-500/5 p-5">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-cyan-300/80">
-                Reduction
+            ) : (
+              <div className="rounded-lg border border-cyan-500/40 bg-cyan-500/5 p-5">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-cyan-300/80">
+                  Reduction (benchmark)
+                </div>
+                <div className="mono text-4xl font-bold text-cyan-300 mt-1">
+                  {pct(report.comparison.relative_reduction)}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-2">
+                  Absolute drop: {pct(report.comparison.absolute_drop)} pp · measured by
+                  Microsoft's Attack Success Rate metric
+                </div>
               </div>
-              <div className="mono text-4xl font-bold text-cyan-300 mt-1">
-                {pct(report.comparison.relative_reduction)}
-              </div>
-              <div className="text-[11px] text-slate-400 mt-2">
-                Absolute drop: {pct(report.comparison.absolute_drop)} pp · measured by
-                Microsoft's Attack Success Rate metric
-              </div>
-            </div>
+            )}
           </div>
         ) : reportError ? (
           <div className="text-sm text-red-300">
@@ -309,45 +344,6 @@ export default function MicrosoftPage() {
           </div>
         ) : (
           <div className="text-sm text-slate-500">Loading…</div>
-        )}
-
-        {/* Live Sentinel-protected stats from the backend */}
-        {liveRedTeam && liveRedTeam.total_attacks > 0 && (
-          <div className="mt-5 pt-5 border-t border-white/5">
-            <div className="text-[10px] uppercase tracking-widest text-emerald-300/70 mb-3 flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Live SentinelMesh-protected stats
-              <span className="text-slate-500 normal-case tracking-normal">
-                ({liveRedTeam.sessions_24h} sessions, {liveRedTeam.total_attacks} tool calls evaluated in last 24h)
-              </span>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.03] p-3">
-                <div className="text-[10px] text-slate-400">Attacks</div>
-                <div className="mono text-xl font-bold text-slate-200 mt-0.5">{liveRedTeam.total_attacks}</div>
-              </div>
-              <div className="rounded-lg border border-red-500/20 bg-red-500/[0.03] p-3">
-                <div className="text-[10px] text-slate-400">Blocked</div>
-                <div className="mono text-xl font-bold text-red-400 mt-0.5">{liveRedTeam.blocked}</div>
-              </div>
-              <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.03] p-3">
-                <div className="text-[10px] text-slate-400">Allowed</div>
-                <div className="mono text-xl font-bold text-amber-400 mt-0.5">{liveRedTeam.allowed}</div>
-              </div>
-              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.03] p-3">
-                <div className="text-[10px] text-slate-400">Live ASR</div>
-                <div className="mono text-xl font-bold text-emerald-400 mt-0.5">{pct(liveRedTeam.asr)}</div>
-                <div className="text-[10px] text-slate-500">allowed ÷ total</div>
-              </div>
-              <div className="rounded-lg border border-violet-500/20 bg-violet-500/[0.03] p-3">
-                <div className="text-[10px] text-slate-400">Block Rate</div>
-                <div className="mono text-xl font-bold text-violet-400 mt-0.5">
-                  {liveRedTeam.total_attacks > 0 ? pct(1 - liveRedTeam.asr) : "—"}
-                </div>
-                <div className="text-[10px] text-slate-500">(total − allowed) ÷ total</div>
-              </div>
-            </div>
-          </div>
         )}
 
         {strategies.length > 0 && (
