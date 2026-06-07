@@ -1,0 +1,192 @@
+# SentinelMesh — production reverse proxy.
+#
+# Two public hostnames, both auto-TLS via Let's Encrypt:
+#
+#   sentinel.{$SM_DOMAIN}   the SOC dashboard (Next.js) and same-origin API
+#   skynest.{$SM_DOMAIN}    the SkyNest demo booking site
+#
+# Caddy is the ONLY thing exposed on ports 80 and 443. All other services
+# live on the internal docker network and are unreachable from the public
+# internet (their compose `ports:` mappings are removed in
+# docker-compose.prod.yml).
+#
+# Required environment (passed in by docker-compose.prod.yml):
+#   SM_DOMAIN                  e.g. your-domain.example
+#   SM_PUBLIC_DEMO_KEY         API key Caddy injects for anonymous SOC visitors
+#   SM_ADMIN_BASIC_AUTH        bcrypt hash from `caddy hash-password` (for /admin)
+
+{
+    # Email used by Let's Encrypt for renewal notifications.
+    email   {$SM_ACME_EMAIL}
+
+    # Leave on for production. Comment out the next line to use the staging
+    # CA while you're testing — saves your prod LE rate-limit budget.
+    # acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+
+    # Modest defaults. Caddy sets sane TLS ciphers and HTTP/2 by default.
+    servers {
+        timeouts {
+            read_body   30s
+            read_header 10s
+            write       60s
+            idle        2m
+        }
+    }
+}
+
+# ----------------------------------------------------------------------------
+# 1) SOC dashboard + same-origin API
+#    The browser fetches /api/* and /ws/* from this same hostname so we can
+#    inject the X-API-Key server-side and never expose it in JS bundles.
+# ----------------------------------------------------------------------------
+sentinel.{$SM_DOMAIN} {
+    encode zstd gzip
+
+    # /admin/* — Spring Boot actuators + Swagger UI behind basic auth.
+    # Useful for ops; never exposed to anonymous visitors.
+    @admin path /admin/* /actuator/* /swagger-ui* /v3/api-docs*
+    handle @admin {
+        basic_auth {
+            admin {$SM_ADMIN_BASIC_AUTH}
+        }
+        reverse_proxy backend:8080
+    }
+
+    # /agent/* — proxies to the LangGraph agent service so the SOC's
+    # "Run a Live Agent" widget can submit goals from the browser.
+    @agent path /agent/*
+    handle @agent {
+        # Tight rate-limit: each goal spends real LLM tokens.
+        rate_limit {
+            zone agent_post {
+                key    {remote_host}
+                events 6
+                window 1m
+            }
+        }
+        # Strip the /agent prefix so /agent/goals -> /goals on the upstream.
+        uri strip_prefix /agent
+        reverse_proxy agents:8090
+    }
+
+    # /api/* and /ws/* — backend REST + WebSocket. Caddy attaches the
+    # public-demo API key so the JS bundle never carries one.
+    @api path /api/* /ws/*
+    handle @api {
+        # Rate-limit anonymous visitors to keep costs and DB writes sane.
+        # Read-heavy endpoints get a generous quota; the write endpoints
+        # below are tighter.
+        rate_limit {
+            zone soc_api {
+                key    {remote_host}
+                events 120
+                window 1m
+            }
+        }
+
+        # Inject the public-demo tenant key. The browser never sees this.
+        request_header X-API-Key {$SM_PUBLIC_DEMO_KEY}
+
+        # WebSocket upgrades need to pass through cleanly.
+        reverse_proxy backend:8080 {
+            header_up Host                {host}
+            header_up X-Real-IP           {remote_host}
+            header_up X-Forwarded-For     {remote_host}
+            header_up X-Forwarded-Proto   {scheme}
+        }
+    }
+
+    # Tighter rate-limits on the two public-write endpoints. These come
+    # AFTER the /api/* handle so they layer on additional throttling.
+    @adversary_fire path /api/v1/adversary/fire
+    handle @adversary_fire {
+        rate_limit {
+            zone adversary_fire {
+                key    {remote_host}
+                events 6
+                window 1m
+            }
+        }
+        request_header X-API-Key {$SM_PUBLIC_DEMO_KEY}
+        reverse_proxy backend:8080
+    }
+
+    @policy_simulate path /api/v1/policies/simulate
+    handle @policy_simulate {
+        rate_limit {
+            zone policy_simulate {
+                key    {remote_host}
+                events 12
+                window 1m
+            }
+        }
+        request_header X-API-Key {$SM_PUBLIC_DEMO_KEY}
+        reverse_proxy backend:8080
+    }
+
+    # Everything else — the Next.js SOC dashboard.
+    handle {
+        reverse_proxy frontend:3000
+    }
+
+    log {
+        output file /var/log/caddy/sentinel-access.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+        format console
+    }
+}
+
+# ----------------------------------------------------------------------------
+# 2) SkyNest demo booking site (the agent's playground).
+# ----------------------------------------------------------------------------
+skynest.{$SM_DOMAIN} {
+    encode zstd gzip
+
+    # Looser rate limit; SkyNest is fully read-mostly. The /api/concierge
+    # POST is what dispatches a real LangGraph goal, so we tighten that.
+    rate_limit {
+        zone skynest_default {
+            key    {remote_host}
+            events 60
+            window 1m
+        }
+    }
+
+    @concierge path /api/concierge
+    handle @concierge {
+        rate_limit {
+            zone skynest_concierge {
+                key    {remote_host}
+                events 6
+                window 1m
+            }
+        }
+        reverse_proxy demo-site:9000
+    }
+
+    @booking path /booking/*
+    handle @booking {
+        rate_limit {
+            zone skynest_booking {
+                key    {remote_host}
+                events 12
+                window 1m
+            }
+        }
+        reverse_proxy demo-site:9000
+    }
+
+    handle {
+        reverse_proxy demo-site:9000
+    }
+
+    log {
+        output file /var/log/caddy/skynest-access.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+        format console
+    }
+}

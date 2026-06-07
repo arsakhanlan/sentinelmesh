@@ -1,0 +1,192 @@
+# Production overlay — applied on top of the dev docker-compose.yml.
+#
+# Requires **Docker Compose v2.24+** (uses the `!reset` list-override tag).
+# Ubuntu 24.04 ships v2.27 in the docker-compose-plugin package — fine.
+# If you must run on an older compose, replace `ports: !reset []` with the
+# verbose `ports: []` plus removing the corresponding lines from the dev
+# compose, or upgrade compose; this file is the source of truth for prod.
+#
+# What this overlay changes (and why):
+#
+#   1. Removes every `ports:` mapping except Caddy's. Postgres, Redis,
+#      backend, agents, demo-site and the frontend become reachable only
+#      from inside the docker network — Caddy is the single ingress.
+#
+#   2. Adds Caddy as an internet-facing reverse proxy with auto-TLS,
+#      injected API keys, and per-route rate limits. See ops/caddy/Caddyfile.
+#
+#   3. Wires every service to read its secrets from /etc/sentinelmesh.env
+#      on the host. No defaults in compose; if a value is missing, the
+#      service refuses to start — which is what you want in prod.
+#
+#   4. Pins memory limits so a runaway scanner can't OOM the VM.
+#
+#   5. Adds restart policies so transient crashes auto-recover.
+#
+# Usage on the VM:
+#
+#   sudo cp ops/sentinelmesh.env.example /etc/sentinelmesh.env
+#   sudo chmod 600 /etc/sentinelmesh.env
+#   # ... fill in the real values ...
+#
+#   docker compose \
+#     -f sentinelmesh-agents/docker-compose.yml \
+#     -f sentinelmesh-agents/docker-compose.prod.yml \
+#     --env-file /etc/sentinelmesh.env \
+#     up -d --build
+#
+# To roll back to the dev stack: just drop the second `-f` flag.
+
+services:
+
+  # ---- Postgres -----------------------------------------------------------
+  postgres:
+    ports: !reset []          # remove host port mapping
+    environment:
+      POSTGRES_DB:       sentinelmesh
+      POSTGRES_USER:     ${POSTGRES_USER:?POSTGRES_USER must be set}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+    mem_limit: 768m
+
+  # ---- Redis --------------------------------------------------------------
+  redis:
+    ports: !reset []
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    mem_limit: 256m
+
+  # ---- Backend (Spring Boot) ---------------------------------------------
+  backend:
+    ports: !reset []
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/sentinelmesh
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:?}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      # No defaults — fail fast if the env file is incomplete.
+      SENTINELMESH_API_KEY:           ${SENTINELMESH_API_KEY:?}
+      SENTINELMESH_ACME_API_KEY:      ${SENTINELMESH_ACME_API_KEY:?}
+      SENTINELMESH_PUBLIC_DEMO_KEY:   ${SENTINELMESH_PUBLIC_DEMO_KEY:?}
+      SENTINELMESH_JWT_SECRET:        ${SENTINELMESH_JWT_SECRET:?}
+      SENTINELMESH_PUBLIC_DEMO_MODE:  ${SENTINELMESH_PUBLIC_DEMO_MODE:-true}
+      SENTINELMESH_CORS_ALLOWED_ORIGINS: ${SENTINELMESH_CORS_ALLOWED_ORIGINS:?}
+      SENTINELMESH_POLICY_BUNDLE: file:/app/policies/default-bundle.yml
+      # LLM (DeepSeek via OpenAI-compatible endpoint by default).
+      SENTINELMESH_L4_PROVIDER: ${SENTINELMESH_L4_PROVIDER:-openai}
+      OPENAI_BASE_URL:          ${OPENAI_BASE_URL:-https://api.deepseek.com}
+      OPENAI_API_KEY:           ${OPENAI_API_KEY:?}
+      OPENAI_MODEL:             ${OPENAI_MODEL:-deepseek-chat}
+      # Azure Content Safety / Prompt Shields stay stubbed unless real
+      # credentials are provided.
+      SENTINELMESH_AZURE_MODE:        ${SENTINELMESH_AZURE_MODE:-stub}
+      AZURE_CONTENT_SAFETY_ENDPOINT:  ${AZURE_CONTENT_SAFETY_ENDPOINT:-}
+      AZURE_CONTENT_SAFETY_KEY:       ${AZURE_CONTENT_SAFETY_KEY:-}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1500M
+    mem_limit: 1500m
+
+  # ---- Agent service (LangGraph) -----------------------------------------
+  agents:
+    ports: !reset []
+    environment:
+      SENTINEL_BASE_URL:   http://backend:8080
+      SENTINEL_API_KEY:    ${SENTINELMESH_API_KEY:?}    # internal calls use the privileged key
+      DEMO_SITE_BASE_URL:  http://demo-site:9000
+      AGENT_LLM_MODE:      ${AGENT_LLM_MODE:-openai}
+      OPENAI_BASE_URL:     ${OPENAI_BASE_URL:-https://api.deepseek.com}
+      OPENAI_API_KEY:      ${OPENAI_API_KEY:?}
+      OPENAI_MODEL:        ${OPENAI_MODEL:-deepseek-chat}
+      AGENT_TEMPERATURE:   ${AGENT_TEMPERATURE:-0.2}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+    mem_limit: 768m
+
+  # ---- SkyNest demo site -------------------------------------------------
+  demo-site:
+    ports: !reset []
+    environment:
+      AGENT_BASE_URL:    http://agents:8090
+      # User-facing link the demo footer prints. In prod this points at
+      # the SOC subdomain so a visitor can click through.
+      SOC_URL:           https://sentinel.${SM_DOMAIN:?SM_DOMAIN must be set}
+      SKYNEST_DB_PATH:   /data/skynest-bookings.db
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    mem_limit: 384m
+
+  # ---- Frontend (Next.js SOC dashboard) ----------------------------------
+  # Build the production image: NEXT_PUBLIC_BACKEND_URL/AGENT_URL are
+  # *empty* so the JS bundle uses same-origin (relative) paths. WS_URL
+  # points at the public hostname (`wss://...`) since WebSocket URLs
+  # must be absolute.
+  frontend:
+    build:
+      context: ../sentinelmesh-frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_BACKEND_URL: ""
+        NEXT_PUBLIC_AGENT_URL:   "/agent"
+        NEXT_PUBLIC_WS_URL:      "wss://sentinel.${SM_DOMAIN:?}"
+        # No API key in the JS bundle — Caddy injects it.
+        NEXT_PUBLIC_API_KEY:     ""
+    ports: !reset []
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    mem_limit: 384m
+
+  # ---- Caddy (the only thing exposed to the internet) --------------------
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: sm-caddy
+    depends_on:
+      backend:    { condition: service_started }
+      agents:     { condition: service_started }
+      demo-site:  { condition: service_started }
+      frontend:   { condition: service_started }
+    environment:
+      SM_DOMAIN:             ${SM_DOMAIN:?SM_DOMAIN must be set}
+      SM_PUBLIC_DEMO_KEY:    ${SENTINELMESH_PUBLIC_DEMO_KEY:?}
+      SM_ADMIN_BASIC_AUTH:   ${SM_ADMIN_BASIC_AUTH:?Run `docker run --rm caddy:2.8-alpine caddy hash-password` to generate}
+      SM_ACME_EMAIL:         ${SM_ACME_EMAIL:?}
+    volumes:
+      - ../ops/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    mem_limit: 256m
+
+volumes:
+  caddy_data:
+  caddy_config:
+  caddy_logs:
