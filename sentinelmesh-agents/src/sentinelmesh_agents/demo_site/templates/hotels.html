@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Hotels{% if query %} in {{ query }}{% endif %} — SkyNest Travel{% endblock %}
+{% block content %}
+<section class="border-b border-slate-200 bg-white">
+  <div class="mx-auto max-w-6xl px-4 py-6">
+    <h1 class="font-display text-2xl font-bold md:text-3xl" id="deals">
+      {{ total }} stays{% if query %} in {{ query }}{% endif %}
+    </h1>
+    {# Search form preserves the active filters so a fresh search doesn't
+       silently drop the user's price ceiling / rating floor / amenity picks. #}
+    <form action="/hotels" method="get" class="mt-4 flex flex-wrap items-center gap-2">
+      <input name="q" value="{{ query or '' }}" placeholder="Where to? (city, area, hotel name)"
+             class="flex-1 min-w-[14rem] rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-brand-600 focus:outline-none" />
+      {% if max_price is not none %}<input type="hidden" name="max_price" value="{{ max_price }}" />{% endif %}
+      {% if min_rating is not none %}<input type="hidden" name="min_rating" value="{{ min_rating }}" />{% endif %}
+      {% for a in selected_amenities %}<input type="hidden" name="amenity" value="{{ a }}" />{% endfor %}
+      {% if sort and sort != 'recommended' %}<input type="hidden" name="sort" value="{{ sort }}" />{% endif %}
+      <button class="rounded-xl bg-brand-600 px-5 py-2 text-sm font-semibold text-white hover:bg-brand-700">Search</button>
+      <a href="/hotels" class="text-xs font-medium text-slate-500 hover:text-brand-600">Clear all</a>
+    </form>
+
+    {# Active filter pills — each one is its own remove-link that drops just
+       that filter from the URL. Shows the user exactly what's narrowing the
+       results, Booking.com-style. #}
+    {% set has_filters = (max_price is not none) or (min_rating is not none) or selected_amenities %}
+    {% if has_filters %}
+    <div class="mt-3 flex flex-wrap items-center gap-1.5">
+      <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Filters</span>
+      {% if max_price is not none %}
+      <a href="{{ url_without('max_price') }}" class="group inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-rose-100 hover:text-rose-700">≤ ₹{{ "{:,}".format(max_price) }} <span class="text-[10px] opacity-60 group-hover:opacity-100">✕</span></a>
+      {% endif %}
+      {% if min_rating is not none %}
+      <a href="{{ url_without('min_rating') }}" class="group inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-rose-100 hover:text-rose-700">★ {{ min_rating }}+ <span class="text-[10px] opacity-60 group-hover:opacity-100">✕</span></a>
+      {% endif %}
+      {% for a in selected_amenities %}
+      <a href="{{ url_without_amenity(a) }}" class="group inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-rose-100 hover:text-rose-700">{{ a }} <span class="text-[10px] opacity-60 group-hover:opacity-100">✕</span></a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="mx-auto max-w-6xl px-4 py-8">
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[260px_1fr]">
+
+    <!-- Sticky filter sidebar -->
+    <aside class="lg:sticky lg:top-20 lg:self-start">
+      <form method="get" action="/hotels" class="space-y-5 rounded-2xl border border-slate-200 bg-white p-5">
+        <input type="hidden" name="q" value="{{ query or '' }}" />
+        {% if sort and sort != 'recommended' %}<input type="hidden" name="sort" value="{{ sort }}" />{% endif %}
+
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Price · per night</p>
+          <div class="mt-2">
+            <input type="range" name="max_price" min="2000" max="15000" step="500"
+                   value="{{ max_price or 15000 }}" oninput="this.form.querySelector('.price-out').textContent = '₹' + Number(this.value).toLocaleString('en-IN')"
+                   class="w-full" />
+            <div class="mt-1 flex justify-between text-[11px] text-slate-500">
+              <span>₹2,000</span>
+              <span>up to <span class="price-out font-semibold text-ink-900">{% if max_price %}₹{{ "{:,}".format(max_price) }}{% else %}any{% endif %}</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Minimum rating</p>
+          <div class="mt-2 grid grid-cols-5 gap-1">
+            {% for r in [3.0, 3.5, 4.0, 4.5, 4.8] %}
+            <label class="flex cursor-pointer flex-col items-center rounded-lg border px-1.5 py-1.5 text-xs font-semibold {% if min_rating == r %}border-brand-600 bg-brand-50 text-brand-700{% else %}border-slate-200 text-slate-600 hover:border-slate-400{% endif %}">
+              <input type="radio" name="min_rating" value="{{ r }}" class="hidden" {% if min_rating == r %}checked{% endif %} />
+              <span>★ {{ r }}+</span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Amenities</p>
+          <div class="mt-2 max-h-60 space-y-1 overflow-y-auto pr-1">
+            {% for a in all_amenities %}
+            <label class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-xs hover:bg-slate-50">
+              <input type="checkbox" name="amenity" value="{{ a }}" {% if a in selected_amenities %}checked{% endif %} class="rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+              <span class="text-slate-700">{{ a }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="flex gap-2">
+          <button class="flex-1 rounded-xl bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700">Apply</button>
+          <a href="/hotels{% if query %}?q={{ query }}{% endif %}" class="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Reset</a>
+        </div>
+      </form>
+    </aside>
+
+    <!-- Results column -->
+    <div>
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p class="text-sm text-slate-500"><span class="font-semibold text-ink-900">{{ total }}</span> stays match{% if has_filters %} your filters{% endif %}.</p>
+        <form method="get" action="/hotels" class="flex items-center gap-2">
+          <input type="hidden" name="q" value="{{ query or '' }}" />
+          {% if max_price is not none %}<input type="hidden" name="max_price" value="{{ max_price }}" />{% endif %}
+          {% if min_rating is not none %}<input type="hidden" name="min_rating" value="{{ min_rating }}" />{% endif %}
+          {% for a in selected_amenities %}<input type="hidden" name="amenity" value="{{ a }}" />{% endfor %}
+          <label class="text-xs text-slate-500" for="sort">Sort</label>
+          <select id="sort" name="sort" onchange="this.form.submit()"
+                  class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-brand-600 focus:outline-none">
+            <option value="recommended" {% if sort == 'recommended' %}selected{% endif %}>Recommended</option>
+            <option value="price_asc"   {% if sort == 'price_asc' %}selected{% endif %}>Price · low to high</option>
+            <option value="price_desc"  {% if sort == 'price_desc' %}selected{% endif %}>Price · high to low</option>
+            <option value="rating"      {% if sort == 'rating' %}selected{% endif %}>Top rated</option>
+            <option value="reviews"     {% if sort == 'reviews' %}selected{% endif %}>Most reviewed</option>
+          </select>
+        </form>
+      </div>
+
+      {% if hotels %}
+      <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+        {% for h in hotels %}{% include "_hotel_card.html" %}{% endfor %}
+      </div>
+      {% else %}
+      <div class="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
+        <p class="font-display text-lg font-semibold text-ink-900">No stays match these filters</p>
+        <p class="mt-1 text-sm text-slate-500">Try widening the price range or removing an amenity.</p>
+        <a href="/hotels" class="mt-4 inline-block rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">Reset filters</a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}

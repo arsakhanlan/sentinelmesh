@@ -1,0 +1,55 @@
+# SentinelMesh backend — local development stack
+# Usage: docker compose up --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sentinelmesh-postgres
+    environment:
+      POSTGRES_DB: sentinelmesh
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: sentineldev
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinel -d sentinelmesh"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: sentinelmesh-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    container_name: sentinelmesh-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/sentinelmesh
+      SPRING_DATASOURCE_USERNAME: sentinel
+      SPRING_DATASOURCE_PASSWORD: sentineldev
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SENTINELMESH_AZURE_MODE: stub
+      SENTINELMESH_API_KEY: dev-api-key-change-me
+      SENTINELMESH_JWT_SECRET: dev-jwt-secret-change-me-please-32chars
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:

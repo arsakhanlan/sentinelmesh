@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}SkyNest Travel{% endblock %}</title>
+  <meta name="description" content="SkyNest Travel — book hotels & flights, or let the AI Concierge do it for you." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50:'#eef3ff',100:'#dbe5ff',500:'#4f46e5',600:'#4338ca',700:'#3730a3' },
+            ink: { 900:'#0b1020', 800:'#131a2e', 700:'#1e2740' },
+            coral: '#ff6b5e',
+            sea: '#0fb6a8',
+          },
+          fontFamily: {
+            display: ['"Plus Jakarta Sans"','ui-sans-serif','system-ui','sans-serif'],
+            sans: ['Inter','ui-sans-serif','system-ui','sans-serif'],
+          },
+          boxShadow: { card: '0 10px 30px -12px rgba(15,23,42,0.18)' },
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+  <script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    h1,h2,h3,.font-display { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .glass { backdrop-filter: blur(10px); background: rgba(255,255,255,0.7); }
+  </style>
+</head>
+<body class="bg-slate-50 text-ink-900 antialiased">
+  {% include "_nav.html" %}
+
+  <main>{% block content %}{% endblock %}</main>
+
+  {% include "_footer.html" %}
+  {% include "_concierge.html" %}
+</body>
+</html>

@@ -1,0 +1,40 @@
+spring:
+  datasource:
+    # Same Postgres instance the dev compose stack uses, but on a dedicated
+    # schema so concurrent appends from this test never touch the demo data.
+    url: jdbc:postgresql://localhost:5432/sentinelmesh?currentSchema=audit_concurrency_test
+    username: sentinel
+    password: sentineldev
+    hikari:
+      maximum-pool-size: 24
+      minimum-idle: 4
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: audit_concurrency_test
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    schemas: audit_concurrency_test
+    default-schema: audit_concurrency_test
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+# Audit-chain test only needs the persistence + audit beans; we don't need
+# the real Sentinel inspect path / scanners / Azure clients to exercise it.
+sentinelmesh:
+  api-key: dev-api-key-change-me
+  acme-api-key: acme-demo-key-low-budget
+  jwt-secret: dev-jwt-secret-change-me-please-32chars
+  azure:
+    mode: stub
+
+logging:
+  level:
+    root: WARN
+    com.sentinelmesh.audit: INFO
+    com.sentinelmesh.integration: INFO

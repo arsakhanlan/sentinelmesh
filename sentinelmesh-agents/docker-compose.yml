@@ -1,0 +1,159 @@
+# Full stack: backend + agents + demo site + Postgres + Redis.
+# Optionally Ollama for real-LLM mode via `--profile llm`.
+#
+# Usage:
+#   docker compose up --build                  # stub-LLM mode, instant
+#   docker compose --profile llm up --build    # real Ollama LLM (downloads ~2GB on first run)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sm-postgres
+    environment:
+      POSTGRES_DB: sentinelmesh
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: sentineldev
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinel -d sentinelmesh"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: sm-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ../sentinelmesh-backend
+      dockerfile: Dockerfile
+    image: sentinelmesh-backend:0.1
+    container_name: sm-backend
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/sentinelmesh
+      SPRING_DATASOURCE_USERNAME: sentinel
+      SPRING_DATASOURCE_PASSWORD: sentineldev
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      # Azure Prompt Shield is Azure-specific; stays stubbed unless real
+      # Azure Content Safety credentials are present. L1 (regex) + L4 (LLM
+      # judge) cover the same ground when this is stub.
+      SENTINELMESH_AZURE_MODE: ${SENTINELMESH_AZURE_MODE:-stub}
+      AZURE_CONTENT_SAFETY_ENDPOINT: ${AZURE_CONTENT_SAFETY_ENDPOINT:-}
+      AZURE_CONTENT_SAFETY_KEY: ${AZURE_CONTENT_SAFETY_KEY:-}
+      # L4 LLM judge — point at the same OpenAI-compatible endpoint the
+      # agent uses (DeepSeek, OpenAI, Groq, OpenRouter, ...). When the key
+      # is blank the AzureConfig bean falls back to the stub, so the demo
+      # still runs without an internet connection.
+      SENTINELMESH_L4_PROVIDER: ${SENTINELMESH_L4_PROVIDER:-openai}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_API_KEY:  ${OPENAI_API_KEY:-}
+      OPENAI_MODEL:    ${OPENAI_MODEL:-gpt-4o-mini}
+      SENTINELMESH_API_KEY: dev-api-key-change-me
+      SENTINELMESH_ACME_API_KEY: acme-demo-key-low-budget
+      # Pin the policy bundle to the bind-mount so a docker compose restart is
+      # enough to pick up rule edits — no Java image rebuild required.
+      SENTINELMESH_POLICY_BUNDLE: file:/app/policies/default-bundle.yml
+    volumes:
+      - ../sentinelmesh-backend/src/main/resources/policies:/app/policies:ro
+    ports:
+      - "8080:8080"
+
+  demo-site:
+    build: .
+    image: sentinelmesh-agents:0.1
+    container_name: sm-demo-site
+    command: ["uvicorn", "sentinelmesh_agents.demo_site.server:app", "--host", "0.0.0.0", "--port", "9000"]
+    environment:
+      AGENT_BASE_URL: http://agents:8090     # AI Concierge dispatches goals here
+      SOC_URL: http://localhost:3000          # browser-facing link to the SentinelMesh console
+      SKYNEST_DB_PATH: /data/skynest-bookings.db  # persistent SQLite for bookings
+    volumes:
+      - skynest_data:/data
+    ports:
+      - "9000:9000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:9000/health').status==200 else 1)"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  agents:
+    build: .
+    image: sentinelmesh-agents:0.1
+    container_name: sm-agents
+    depends_on:
+      backend:    { condition: service_started }
+      demo-site:  { condition: service_started }
+    environment:
+      SENTINEL_BASE_URL: http://backend:8080
+      SENTINEL_API_KEY: dev-api-key-change-me
+      DEMO_SITE_BASE_URL: http://demo-site:9000
+      # Defaults to the real LLM (OpenAI-compatible, includes DeepSeek). The
+      # factory in llm/factory.py falls back to the stub if OPENAI_API_KEY is
+      # blank, so this still works on a brand-new clone with no .env.
+      AGENT_LLM_MODE: ${AGENT_LLM_MODE:-openai}    # stub | ollama | openai
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b-instruct}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_API_KEY:  ${OPENAI_API_KEY:-}
+      OPENAI_MODEL:    ${OPENAI_MODEL:-gpt-4o-mini}
+      AGENT_TEMPERATURE: ${AGENT_TEMPERATURE:-0.2}
+    ports:
+      - "8090:8090"
+
+  frontend:
+    build:
+      context: ../sentinelmesh-frontend
+      dockerfile: Dockerfile
+      args:
+        # Browser runs on the host → talks to host-mapped ports.
+        NEXT_PUBLIC_BACKEND_URL: http://localhost:8080
+        NEXT_PUBLIC_WS_URL: ws://localhost:8080
+        NEXT_PUBLIC_AGENT_URL: http://localhost:8090
+        NEXT_PUBLIC_API_KEY: dev-api-key-change-me
+    image: sentinelmesh-frontend:0.1
+    container_name: sm-frontend
+    depends_on:
+      backend: { condition: service_started }
+      agents:  { condition: service_started }
+    ports:
+      - "3000:3000"
+
+  # Optional — only included when `docker compose --profile llm up`.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: sm-ollama
+    profiles: ["llm"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        ollama serve &
+        sleep 3 &&
+        ollama pull qwen2.5:3b-instruct &&
+        wait
+
+volumes:
+  pgdata:
+  ollama:
+  skynest_data:

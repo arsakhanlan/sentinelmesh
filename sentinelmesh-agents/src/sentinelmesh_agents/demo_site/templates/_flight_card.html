@@ -1,0 +1,21 @@
+<article class="flex items-center gap-4 rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-100">
+  <div class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-brand-50 text-lg font-bold text-brand-700">{{ f.airline[:2] }}</div>
+  <div class="min-w-0 flex-1">
+    <div class="flex items-center gap-2 text-sm">
+      <span class="font-display font-bold">{{ f.depart }}</span>
+      <span class="text-slate-400">{{ f.origin }}</span>
+      <span class="flex-1 border-t border-dashed border-slate-300"></span>
+      <span class="text-[11px] text-slate-400">{{ f.duration }} · {{ f.stops }}</span>
+      <span class="flex-1 border-t border-dashed border-slate-300"></span>
+      <span class="font-display font-bold">{{ f.arrive }}</span>
+      <span class="text-slate-400">{{ f.destination }}</span>
+    </div>
+    <div class="mt-1 text-xs text-slate-500">{{ f.airline }} {{ f.code }} · {{ f.origin_city }} → {{ f.destination_city }}
+      {% if f.seats_left <= 4 %}<span class="ml-1 font-semibold text-coral">Only {{ f.seats_left }} seats left</span>{% endif %}
+    </div>
+  </div>
+  <div class="shrink-0 text-right">
+    <div class="font-display text-lg font-extrabold">₹{{ "{:,}".format(f.price_inr) }}</div>
+    <a href="/checkout?type=flight&id={{ f.id }}" class="mt-1 inline-block rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700">Select</a>
+  </div>
+</article>

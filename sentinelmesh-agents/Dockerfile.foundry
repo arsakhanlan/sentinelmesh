@@ -1,0 +1,51 @@
+# Dockerfile for Foundry Hosted Agent deployment.
+#
+# Builds a slim image that runs the SentinelMesh-protected booking agent
+# behind Foundry's Responses protocol via `agent_framework_foundry_hosting`.
+# Optimised for the Foundry runtime: no Playwright, no demo SkyNest server,
+# just the MAF agent + the Sentinel middleware + the OTel exporter.
+#
+# Build:  docker build -t sentinelmesh-booking-agent -f Dockerfile.foundry .
+# Run:    docker run --rm -p 8080:8080 \
+#             -e OPENAI_API_KEY=... \
+#             -e SENTINELMESH_BASE_URL=https://sentinel.example.com \
+#             -e SENTINELMESH_API_KEY=... \
+#             -e OTEL_EXPORTER_OTLP_ENDPOINT=https://<foundry-otlp> \
+#             sentinelmesh-booking-agent
+#
+# Foundry Hosted Agents inject OTEL_EXPORTER_OTLP_ENDPOINT, an Entra-bound
+# managed identity, and session storage automatically — the only env vars
+# you need to set explicitly are the agent's own (OPENAI_API_KEY etc.) and
+# the SentinelMesh backend URL + API key.
+
+FROM python:3.12-slim AS base
+
+# Don't let pip pollute the layer cache with .pyc files.
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# Install runtime + Microsoft + OTel extras. The `[microsoft]` extra brings
+# agent-framework + openai; `[otel]` brings the OTLP exporter so spans go to
+# Foundry's collector automatically.
+COPY pyproject.toml README.md ./
+COPY src ./src
+RUN pip install -e ".[microsoft,otel]" \
+    # `agent_framework_foundry_hosting` is a separate package — pin it
+    # explicitly so the hosted runtime gets the ResponsesHostServer wrapper.
+    && pip install "agent-framework-foundry-hosting>=1.0.0"
+
+# Foundry's Responses protocol port; matches the default in
+# `sentinelmesh_agents.microsoft.foundry_host`.
+EXPOSE 8080
+
+# Foundry's hosted runtime watches a TCP health check at $PORT/healthz; the
+# Responses host server exposes one automatically.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/healthz').status==200 else 1)"
+
+# Run the SentinelMesh-governed agent under Foundry's Responses host.
+CMD ["python", "-m", "sentinelmesh_agents.microsoft.foundry_host"]

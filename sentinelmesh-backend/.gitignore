@@ -1,0 +1,26 @@
+# --- Build artifacts ---
+.gradle/
+build/
+out/
+bin/
+*.class
+
+# --- IDE ---
+.idea/
+*.iml
+.vscode/
+.project
+.settings/
+.classpath
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Env / secrets ---
+.env
+.env.local

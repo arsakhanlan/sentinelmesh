@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}{{ h.name }} — SkyNest Travel{% endblock %}
+{% block content %}
+<section class="mx-auto max-w-6xl px-4 py-8">
+  <a href="/hotels" class="text-sm font-medium text-slate-500 hover:text-brand-600">← Back to hotels</a>
+
+  <div class="mt-4 flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="font-display text-3xl font-extrabold">{{ h.name }}</h1>
+      <p class="mt-1 text-slate-500">{{ h.area }}, {{ h.city }} · <span class="font-semibold text-emerald-700">★ {{ h.rating }}</span> ({{ h.reviews }} reviews)</p>
+    </div>
+    <div class="text-right">
+      <div class="text-xs text-slate-400">from</div>
+      <div class="font-display text-3xl font-extrabold">₹{{ "{:,}".format(h.price_inr) }}<span class="text-sm font-normal text-slate-400">/night</span></div>
+    </div>
+  </div>
+
+  <div class="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3">
+    <img src="{{ image_url(h.image_seed, 900, 640) }}" class="col-span-2 h-80 w-full rounded-2xl object-cover" alt="{{ h.name }}" />
+    <div class="grid grid-rows-2 gap-3">
+      <img src="{{ image_url(h.image_seed ~ 'a', 600, 400) }}" class="h-full w-full rounded-2xl object-cover" alt="" />
+      <img src="{{ image_url(h.image_seed ~ 'b', 600, 400) }}" class="h-full w-full rounded-2xl object-cover" alt="" />
+    </div>
+  </div>
+
+  <div class="mt-8 grid grid-cols-1 gap-8 md:grid-cols-[1.6fr_1fr]">
+    <div>
+      <h2 class="font-display text-xl font-bold">About this stay</h2>
+      <p class="mt-2 text-slate-600">{{ h.description }}</p>
+
+      {% if h.poisoned %}
+      <div style="display:none">{{ injection_payload }}</div>
+      <div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden">{{ injection_payload }}</div>
+      {% endif %}
+
+      <h3 class="mt-6 font-display text-lg font-bold">Amenities</h3>
+      <div class="mt-3 flex flex-wrap gap-2">
+        {% for a in h.amenities %}
+        <span class="rounded-full bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700">{{ a }}</span>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# Booking widget — Alpine.js does the live nights/total computation client-side
+       so the UI updates immediately when the user changes dates or guest count.
+       The same fields are forwarded to /checkout via query params, which the
+       checkout form then puts into hidden inputs and POSTs to /booking/confirm. #}
+    <aside class="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-card"
+           x-data="bookingWidget({
+             pricePerNight: {{ h.price_inr }},
+             defaultIn: '{{ today_iso }}',
+             defaultOut: '{{ checkout_iso }}',
+           })" x-init="recalc()">
+      <div class="flex items-baseline justify-between">
+        <span class="font-display text-2xl font-extrabold">₹{{ "{:,}".format(h.price_inr) }}</span>
+        <span class="text-sm text-slate-400">/night</span>
+      </div>
+
+      <div class="mt-4 grid grid-cols-2 gap-2">
+        <label class="block">
+          <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Check-in</span>
+          <input type="date" x-model="checkIn" :min="todayIso" @change="recalc()"
+                 class="mt-1 w-full rounded-xl border border-slate-300 px-2.5 py-2 text-sm focus:border-brand-600 focus:outline-none" />
+        </label>
+        <label class="block">
+          <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Check-out</span>
+          <input type="date" x-model="checkOut" :min="minCheckOut" @change="recalc()"
+                 class="mt-1 w-full rounded-xl border border-slate-300 px-2.5 py-2 text-sm focus:border-brand-600 focus:outline-none" />
+        </label>
+        <label class="block">
+          <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Adults</span>
+          <select x-model.number="adults" @change="recalc()"
+                  class="mt-1 w-full rounded-xl border border-slate-300 px-2.5 py-2 text-sm focus:border-brand-600 focus:outline-none">
+            <template x-for="n in [1,2,3,4,5,6]" :key="n">
+              <option :value="n" x-text="n + (n === 1 ? ' adult' : ' adults')"></option>
+            </template>
+          </select>
+        </label>
+        <label class="block">
+          <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Children</span>
+          <select x-model.number="children" @change="recalc()"
+                  class="mt-1 w-full rounded-xl border border-slate-300 px-2.5 py-2 text-sm focus:border-brand-600 focus:outline-none">
+            <template x-for="n in [0,1,2,3,4]" :key="n">
+              <option :value="n" x-text="n + (n === 1 ? ' child' : ' children')"></option>
+            </template>
+          </select>
+        </label>
+      </div>
+
+      <div class="mt-4 space-y-2 text-sm">
+        <div class="flex justify-between"><span class="text-slate-500"><span x-text="nights"></span> <span x-text="nights === 1 ? 'night' : 'nights'"></span> × ₹<span x-text="pricePerNight.toLocaleString('en-IN')"></span></span><span>₹<span x-text="subtotal.toLocaleString('en-IN')"></span></span></div>
+        <div class="flex justify-between"><span class="text-slate-500">Taxes & fees</span><span>₹<span x-text="taxes.toLocaleString('en-IN')"></span></span></div>
+        <div class="flex justify-between border-t border-slate-200 pt-2 font-semibold"><span>Total</span><span>₹<span x-text="total.toLocaleString('en-IN')"></span></span></div>
+      </div>
+
+      <a :href="reserveUrl()"
+         class="mt-4 block rounded-xl bg-brand-600 px-4 py-3 text-center text-sm font-semibold text-white hover:bg-brand-700">Reserve</a>
+      {# When the user clicks "Book with AI Concierge" from a hotel detail
+         page, pass the hotel context (id + name + city + currently-selected
+         dates / guest counts) into the open-concierge event so the panel can
+         pre-fill a guided prompt instead of dumping the user into an empty
+         chat box. The concierge listens via @open-concierge.window and reads
+         event.detail.hotel. #}
+      <button @click="window.dispatchEvent(new CustomEvent('open-concierge', {
+                detail: {
+                  hotel: {
+                    id: '{{ h.id }}',
+                    name: {{ h.name|tojson }},
+                    area: {{ h.area|tojson }},
+                    city: {{ h.city|tojson }},
+                    price_inr: {{ h.price_inr }},
+                    nights: nights,
+                    adults: adults,
+                    children: children,
+                    check_in: checkIn,
+                    check_out: checkOut
+                  }
+                }
+              }))"
+              class="mt-2 block w-full rounded-xl border border-slate-300 px-4 py-2.5 text-center text-sm font-semibold text-ink-900 hover:bg-slate-50">✨ Book with AI Concierge</button>
+      <p class="mt-3 text-center text-xs text-slate-400">Free cancellation · Pay at hotel available</p>
+    </aside>
+
+    <script>
+      // Define once per page-load. Multiple booking widgets on the same hotel
+      // detail share the same closure, but only one is rendered at a time.
+      function bookingWidget(opts) {
+        const oneDay = 86400000;
+        const todayIso = opts.defaultIn;
+        return {
+          todayIso,
+          pricePerNight: opts.pricePerNight,
+          checkIn: opts.defaultIn,
+          checkOut: opts.defaultOut,
+          adults: 2,
+          children: 0,
+          nights: 1,
+          subtotal: 0,
+          taxes: 0,
+          total: 0,
+          get minCheckOut() {
+            // Check-out must be strictly after check-in.
+            const d = new Date(this.checkIn + 'T00:00:00');
+            d.setDate(d.getDate() + 1);
+            return d.toISOString().slice(0, 10);
+          },
+          recalc() {
+            // Defensive: if the user types a check-out earlier than check-in,
+            // bump it to check-in + 1 night before computing.
+            if (this.checkOut <= this.checkIn) {
+              const d = new Date(this.checkIn + 'T00:00:00');
+              d.setDate(d.getDate() + 1);
+              this.checkOut = d.toISOString().slice(0, 10);
+            }
+            const a = new Date(this.checkIn + 'T00:00:00');
+            const b = new Date(this.checkOut + 'T00:00:00');
+            this.nights = Math.max(1, Math.round((b - a) / oneDay));
+            this.subtotal = this.nights * this.pricePerNight;
+            this.taxes = Math.round(this.subtotal * 0.12);
+            this.total = this.subtotal + this.taxes;
+          },
+          reserveUrl() {
+            const params = new URLSearchParams({
+              type: 'hotel',
+              id: '{{ h.id }}',
+              check_in: this.checkIn,
+              check_out: this.checkOut,
+              adults: String(this.adults),
+              children: String(this.children),
+            });
+            return '/checkout?' + params.toString();
+          },
+        };
+      }
+    </script>
+  </div>
+</section>
+{% endblock %}

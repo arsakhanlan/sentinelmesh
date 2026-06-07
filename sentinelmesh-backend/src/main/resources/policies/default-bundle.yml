@@ -1,0 +1,127 @@
+# SentinelMesh — default policy bundle.
+# First match wins (sorted by priority ascending).
+#
+# Available variables in the `when` expression:
+#   risk         composite risk in [0,1]
+#   blast        blast radius in [0,1]
+#   tool         tool name (string; use 'name' literals)
+#   has_secret   bool, set when DLP detected secrets
+#   has_pii      bool, set when DLP detected PII
+#   over_budget        bool, L6 session or tenant cap would be exceeded
+#   tenant_over_budget bool, L6 org-wide rolling 24h cap (distinct from per-session token)
+#   capability_escalation bool, CAP scanner — origin actor delegated tool it lacks
+#
+# Operators: > < >= <= == != && || !
+
+name: default
+version: 1
+
+rules:
+  # Confused deputy: less-privileged origin delegated a tool it cannot use to a more-privileged actor.
+  - name: capability-escalation-block
+    priority: 0
+    when: "capability_escalation == 1"
+    then: BLOCK
+    reason: "Capability escalation / confused deputy — origin actor lacks the delegated tool capability."
+
+  # Org-wide rolling 24h tenant cap — distinct reason for SOC / policy tuning.
+  - name: tenant-daily-cap-exhausted
+    priority: 0
+    when: "tenant_over_budget == 1"
+    then: BLOCK
+    reason: "Organization-wide daily capability limit reached (tenant budget)."
+
+  # The capability token is a hard contract — exceed it and the action stops,
+  # regardless of risk score. Highest priority so it wins over DLP/risk rules.
+  - name: capability-budget-exhausted
+    priority: 0
+    when: "over_budget == 1"
+    then: BLOCK
+    reason: "Capability budget exhausted for this session."
+
+  # L7 attack-memory: matched a known attack fingerprint with high similarity.
+  # We trust this as much as the budget rule — known bad is known bad.
+  - name: known-attack-block
+    priority: 0
+    when: "known_attack == 1"
+    then: BLOCK
+    reason: "Matched a previously-blocked attack pattern (L7 attack memory)."
+
+  # DLP — split by blast radius. Secrets heading out over a high-blast
+  # channel (email, payments, db.write, db.delete) leave the trust boundary
+  # *and* are hard to claw back, so we BLOCK rather than redact-and-ship.
+  # Low-blast contexts (notes.append, files.write inside the agent sandbox)
+  # stay on REWRITE so the demo can still show the redaction-in-flight UX.
+  - name: dlp-block-secrets-high-blast
+    priority: 1
+    when: "has_secret == 1 && blast >= 0.5"
+    then: BLOCK
+    reason: "Secret detected in a high-blast outbound (email / payment / db write); blocked, not just redacted."
+
+  - name: dlp-rewrite-secrets-low-blast
+    priority: 2
+    when: "has_secret == 1"
+    then: REWRITE
+    reason: "Secret in low-blast outbound (notes / files); redacted before send."
+
+  # Clean transactional emails (booking confirmations, password resets, etc.)
+  # would otherwise trip high-blast at priority 10 because email.send has a
+  # base blast of 0.70 and any external recipient adds +0.10. We don't want
+  # the SOC pinged for every confirmation message — only for the ones that
+  # actually carry risk. DLP (priority 1) still wins on secret leaks; PII /
+  # composite-risk rules below still flag PII-bearing or otherwise-risky
+  # email content. So this exemption is bounded to "no secrets, no PII, no
+  # known attack, low risk score".
+  - name: email-allow-clean
+    priority: 5
+    when: "tool == 'email.send' && risk < 0.3 && has_secret == 0 && has_pii == 0 && known_attack == 0"
+    then: ALLOW
+    reason: "Clean transactional email — no secrets, no PII, low risk."
+
+  - name: high-blast-require-approval
+    priority: 10
+    when: "blast >= 0.7"
+    then: REQUIRE_APPROVAL
+    reason: "Action blast radius exceeds policy threshold (0.7)."
+
+  - name: critical-injection-quarantine
+    priority: 15
+    when: "risk >= 0.95"
+    then: QUARANTINE
+    reason: "Critical injection/exfiltration risk; session frozen for forensics."
+
+  - name: critical-risk-block
+    priority: 20
+    when: "risk >= 0.85"
+    then: BLOCK
+    reason: "Composite risk score is critical; agent rejected."
+
+  - name: high-risk-require-approval
+    priority: 30
+    when: "risk >= 0.6"
+    then: REQUIRE_APPROVAL
+    reason: "Composite risk in approval band [0.6, 0.85)."
+
+  - name: payments-require-approval-medium
+    priority: 40
+    when: "tool == 'payments.charge' && risk >= 0.3"
+    then: REQUIRE_APPROVAL
+    reason: "All non-trivial payment actions require human approval."
+
+  - name: pii-rewrite
+    priority: 50
+    when: "has_pii == 1"
+    then: REWRITE
+    reason: "Outbound contained PII; redacted before send."
+
+  - name: medium-risk-allow-with-rewrite
+    priority: 60
+    when: "risk >= 0.4"
+    then: REWRITE
+    reason: "Moderate risk — sanitized and forwarded."
+
+  - name: default-allow
+    priority: 1000
+    when: "risk < 0.4"
+    then: ALLOW
+    reason: "Below risk threshold."

@@ -1,0 +1,19 @@
+# Activated by @ActiveProfiles("test") in integration tests.
+# Database URL is overridden at runtime by Testcontainers.
+
+spring:
+  flyway:
+    enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+logging:
+  level:
+    com.sentinelmesh: DEBUG
+    org.testcontainers: INFO
+
+sentinelmesh:
+  azure:
+    mode: stub

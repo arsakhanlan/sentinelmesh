@@ -1,0 +1,101 @@
+spring:
+  application:
+    name: sentinelmesh-backend
+  threads:
+    virtual:
+      enabled: true
+  main:
+    banner-mode: log
+  jackson:
+    default-property-inclusion: non_null
+    deserialization:
+      fail-on-unknown-properties: false
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/sentinelmesh}
+    username: ${SPRING_DATASOURCE_USERNAME:sentinel}
+    password: ${SPRING_DATASOURCE_PASSWORD:sentineldev}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      timeout: 2s
+      # Pool disabled — commons-pool2 not on classpath. Single instance
+      # doesn't need it. To enable: add commons-pool2 + lettuce.pool block.
+
+server:
+  port: 8080
+  shutdown: graceful
+  error:
+    include-message: always
+    include-binding-errors: always
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui
+    operations-sorter: alpha
+    tags-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+
+logging:
+  level:
+    root: INFO
+    com.sentinelmesh: INFO
+    org.hibernate.SQL: WARN
+    org.springframework.web.socket: WARN
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%logger{36}] - %msg%n"
+
+sentinelmesh:
+  api-key: ${SENTINELMESH_API_KEY:dev-api-key-change-me}
+  # Second seed tenant (acme-travel) — tight daily caps for budget-runaway demos.
+  acme-api-key: ${SENTINELMESH_ACME_API_KEY:acme-demo-key-low-budget}
+  jwt-secret: ${SENTINELMESH_JWT_SECRET:dev-jwt-secret-change-me-please-32chars}
+  l4:
+    # stub | azure | openai. If unset, falls back to legacy sentinelmesh.azure.mode.
+    provider: ${SENTINELMESH_L4_PROVIDER:}
+  azure:
+    mode: ${SENTINELMESH_AZURE_MODE:stub}        # legacy switch: stub | real (only affects Prompt Shields + Azure judge fallback)
+    contentSafety:
+      endpoint: ${AZURE_CONTENT_SAFETY_ENDPOINT:}
+      key:      ${AZURE_CONTENT_SAFETY_KEY:}
+    openai:
+      endpoint:   ${AZURE_OPENAI_ENDPOINT:}
+      key:        ${AZURE_OPENAI_KEY:}
+      deployment: ${AZURE_OPENAI_DEPLOYMENT:gpt-4o-mini}
+  openai:
+    # Plain OpenAI or any OpenAI-compatible host (Groq, OpenRouter, Together, Ollama, ...).
+    # Leave baseUrl blank to default to https://api.openai.com.
+    baseUrl: ${OPENAI_BASE_URL:}
+    key:     ${OPENAI_API_KEY:}
+    model:   ${OPENAI_MODEL:gpt-4o-mini}
+  policy:
+    bundle: classpath:policies/default-bundle.yml

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Page not found — SkyNest Travel{% endblock %}
+{% block content %}
+<section class="mx-auto flex max-w-2xl flex-col items-center px-4 py-24 text-center">
+  <div class="text-6xl">🧭</div>
+  <h1 class="mt-4 font-display text-3xl font-extrabold md:text-4xl">We can't find that page.</h1>
+  <p class="mt-2 max-w-md text-slate-500">
+    The URL <span class="mono rounded bg-slate-100 px-1.5 py-0.5 text-xs">{{ path }}</span> didn't lead anywhere on SkyNest. Try one of these instead.
+  </p>
+  <div class="mt-6 flex flex-wrap items-center justify-center gap-2">
+    <a href="/"        class="rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-ink-800">Home</a>
+    <a href="/hotels"  class="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-ink-900 hover:bg-slate-50">Hotels</a>
+    <a href="/flights" class="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-ink-900 hover:bg-slate-50">Flights</a>
+    <button onclick="window.dispatchEvent(new CustomEvent('open-concierge'))"
+            class="rounded-xl border border-brand-200 bg-brand-50 px-4 py-2.5 text-sm font-semibold text-brand-700 hover:bg-brand-100">✨ Ask the AI Concierge</button>
+  </div>
+</section>
+{% endblock %}
