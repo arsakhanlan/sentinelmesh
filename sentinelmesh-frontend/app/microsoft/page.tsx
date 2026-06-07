@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 
 import { CONFIG } from "@/lib/config";
+import type { MetricsSummary } from "@/lib/types";
 import { Panel } from "@/components/ui";
 import { TopBar } from "@/components/TopBar";
 
@@ -110,6 +111,7 @@ export default function MicrosoftPage() {
   const [reportError, setReportError] = useState<string | null>(null);
   const [policiesMd, setPoliciesMd] = useState<string>("");
   const [policiesSource, setPoliciesSource] = useState<"live" | "sample" | "loading">("loading");
+  const [liveMetrics, setLiveMetrics] = useState<MetricsSummary | null>(null);
 
   // Load the baked red-team report from /public/microsoft/redteam-report.json.
   useEffect(() => {
@@ -156,6 +158,24 @@ export default function MicrosoftPage() {
     return () => { cancelled = true; };
   }, []);
 
+  // Poll live operational metrics so the page reflects activity from the SOC.
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () => {
+      if (cancelled) return;
+      fetch(`${CONFIG.backendUrl}/api/v1/metrics/summary`)
+        .then(async (r) => {
+          if (!r.ok) throw new Error(`${r.status}`);
+          return r.json() as Promise<MetricsSummary>;
+        })
+        .then((m) => { if (!cancelled) setLiveMetrics(m); })
+        .catch(() => { /* backend may be restarting; retry on next interval */ });
+    };
+    poll();
+    const id = setInterval(poll, 4000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
   const strategies = useMemo(() => {
     if (!report) return [];
     return Object.entries(report.comparison.by_strategy)
@@ -180,6 +200,35 @@ export default function MicrosoftPage() {
           </div>
         </div>
       </header>
+
+      {/* Live operational metrics — updates every 4s from the backend */}
+      {liveMetrics && (
+        <div className="glass rounded-xl px-5 py-3 flex flex-wrap items-center gap-x-6 gap-y-1 text-[11px]">
+          <span className="text-slate-400 uppercase tracking-widest text-[10px]">Live</span>
+          <span className="text-slate-300">
+            Threats{" "}
+            <span className="mono text-red-400 font-semibold">{liveMetrics.threats_total}</span>
+          </span>
+          <span className="text-slate-300">
+            Categories{" "}
+            <span className="mono text-amber-400 font-semibold">
+              {Object.keys(liveMetrics.threats_by_category).length}
+            </span>
+          </span>
+          <span className="text-slate-300">
+            Policies{" "}
+            <span className="mono text-violet-400 font-semibold">{liveMetrics.policy_rules_loaded}</span>
+          </span>
+          <span className="text-slate-500 text-[10px]">
+            p50 {liveMetrics.detect_latency_ms?.p50 != null ? `${liveMetrics.detect_latency_ms.p50.toFixed(1)}ms` : "—"}
+            {" · "}
+            p95 {liveMetrics.detect_latency_ms?.p95 != null ? `${liveMetrics.detect_latency_ms.p95.toFixed(1)}ms` : "—"}
+          </span>
+          <span className="text-slate-500 text-[10px] ml-auto">
+            {liveMetrics.detect_latency_ms?.samples ?? 0} samples
+          </span>
+        </div>
+      )}
 
       {/* ---- Hero ASR comparison ---- */}
       <Panel
