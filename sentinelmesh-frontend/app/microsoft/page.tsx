@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 
 import { CONFIG } from "@/lib/config";
-import type { MetricsSummary } from "@/lib/types";
+import type { MetricsSummary, RedTeamSummary } from "@/lib/types";
 import { Panel } from "@/components/ui";
 import { TopBar } from "@/components/TopBar";
 
@@ -112,6 +112,7 @@ export default function MicrosoftPage() {
   const [policiesMd, setPoliciesMd] = useState<string>("");
   const [policiesSource, setPoliciesSource] = useState<"live" | "sample" | "loading">("loading");
   const [liveMetrics, setLiveMetrics] = useState<MetricsSummary | null>(null);
+  const [liveRedTeam, setLiveRedTeam] = useState<RedTeamSummary | null>(null);
 
   // Load the baked red-team report from /public/microsoft/redteam-report.json.
   useEffect(() => {
@@ -170,6 +171,24 @@ export default function MicrosoftPage() {
         })
         .then((m) => { if (!cancelled) setLiveMetrics(m); })
         .catch(() => { /* backend may be restarting; retry on next interval */ });
+    };
+    poll();
+    const id = setInterval(poll, 4000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  // Poll live red-team stats (ASR, block rate, per-category threats) from backend.
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () => {
+      if (cancelled) return;
+      fetch(`${CONFIG.backendUrl}/api/v1/metrics/redteam`)
+        .then(async (r) => {
+          if (!r.ok) throw new Error(`${r.status}`);
+          return r.json() as Promise<RedTeamSummary>;
+        })
+        .then((d) => { if (!cancelled) setLiveRedTeam(d); })
+        .catch(() => { /* backend may be restarting */ });
     };
     poll();
     const id = setInterval(poll, 4000);
@@ -250,7 +269,7 @@ export default function MicrosoftPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-5">
               <div className="text-[10px] font-semibold uppercase tracking-widest text-red-300/80">
-                Naked agent
+                Naked agent (benchmark)
               </div>
               <div className="mono text-4xl font-bold text-red-400 mt-1">
                 {pct(report.comparison.naked_asr)}
@@ -261,7 +280,7 @@ export default function MicrosoftPage() {
             </div>
             <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-5">
               <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-300/80">
-                SentinelMesh-protected
+                SentinelMesh-protected (benchmark)
               </div>
               <div className="mono text-4xl font-bold text-emerald-400 mt-1">
                 {pct(report.comparison.sentinel_asr)}
@@ -290,6 +309,45 @@ export default function MicrosoftPage() {
           </div>
         ) : (
           <div className="text-sm text-slate-500">Loading…</div>
+        )}
+
+        {/* Live Sentinel-protected stats from the backend */}
+        {liveRedTeam && liveRedTeam.total_attacks > 0 && (
+          <div className="mt-5 pt-5 border-t border-white/5">
+            <div className="text-[10px] uppercase tracking-widest text-emerald-300/70 mb-3 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Live SentinelMesh-protected stats
+              <span className="text-slate-500 normal-case tracking-normal">
+                ({liveRedTeam.sessions_24h} sessions, {liveRedTeam.total_attacks} tool calls evaluated in last 24h)
+              </span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.03] p-3">
+                <div className="text-[10px] text-slate-400">Attacks</div>
+                <div className="mono text-xl font-bold text-slate-200 mt-0.5">{liveRedTeam.total_attacks}</div>
+              </div>
+              <div className="rounded-lg border border-red-500/20 bg-red-500/[0.03] p-3">
+                <div className="text-[10px] text-slate-400">Blocked</div>
+                <div className="mono text-xl font-bold text-red-400 mt-0.5">{liveRedTeam.blocked}</div>
+              </div>
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.03] p-3">
+                <div className="text-[10px] text-slate-400">Allowed</div>
+                <div className="mono text-xl font-bold text-amber-400 mt-0.5">{liveRedTeam.allowed}</div>
+              </div>
+              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.03] p-3">
+                <div className="text-[10px] text-slate-400">Live ASR</div>
+                <div className="mono text-xl font-bold text-emerald-400 mt-0.5">{pct(liveRedTeam.asr)}</div>
+                <div className="text-[10px] text-slate-500">allowed ÷ total</div>
+              </div>
+              <div className="rounded-lg border border-violet-500/20 bg-violet-500/[0.03] p-3">
+                <div className="text-[10px] text-slate-400">Block Rate</div>
+                <div className="mono text-xl font-bold text-violet-400 mt-0.5">
+                  {liveRedTeam.total_attacks > 0 ? pct(1 - liveRedTeam.asr) : "—"}
+                </div>
+                <div className="text-[10px] text-slate-500">(total − allowed) ÷ total</div>
+              </div>
+            </div>
+          </div>
         )}
 
         {strategies.length > 0 && (

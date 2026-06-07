@@ -167,6 +167,16 @@ export interface TenantToolUsage {
   pct: number;
 }
 
+export interface RedTeamSummary {
+  total_attacks: number;
+  blocked: number;
+  allowed: number;
+  asr: number;
+  sessions_24h: number;
+  threats_by_category: Record<string, number>;
+  policy_rules_loaded: number;
+}
+
 export interface TenantSummary {
   tenantId: string;
   name: string;

@@ -1,6 +1,8 @@
 package com.sentinelmesh.api.rest;
 
 import com.sentinelmesh.domain.port.out.ThreatRepository;
+import com.sentinelmesh.persistence.repository.AuditEventJpaRepository;
+import com.sentinelmesh.persistence.repository.SessionJpaRepository;
 import com.sentinelmesh.policy.PolicyEngine;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -23,12 +25,18 @@ public class MetricsSummaryController {
     private final ThreatRepository threats;
     private final PolicyEngine policy;
     private final MeterRegistry meterRegistry;
+    private final AuditEventJpaRepository auditRepo;
+    private final SessionJpaRepository sessionRepo;
 
     public MetricsSummaryController(ThreatRepository threats, PolicyEngine policy,
-                                    MeterRegistry meterRegistry) {
+                                    MeterRegistry meterRegistry,
+                                    AuditEventJpaRepository auditRepo,
+                                    SessionJpaRepository sessionRepo) {
         this.threats = threats;
         this.policy = policy;
         this.meterRegistry = meterRegistry;
+        this.auditRepo = auditRepo;
+        this.sessionRepo = sessionRepo;
     }
 
     private static final java.util.List<String> CATEGORIES = java.util.List.of(
@@ -85,5 +93,39 @@ public class MetricsSummaryController {
 
     private static double round(double v) {
         return Double.isNaN(v) ? 0.0 : Math.round(v * 100.0) / 100.0;
+    }
+
+    /**
+     * Live red-team stats computed from the audit_events table — ASR, block
+     * rate, per-category threat counts, and session count. The "naked" column
+     * is always zero here because SentinelMesh only sees protected traffic.
+     */
+    @GetMapping("/redteam")
+    public Map<String, Object> redteam() {
+        Map<String, Object> out = new LinkedHashMap<>();
+
+        long totalDecisions = auditRepo.countSentinelDecisions();
+        long blocked = auditRepo.countSentinelDecisionsBlocked();
+        long allowed = totalDecisions - blocked;
+        double asr = totalDecisions > 0 ? (double) allowed / totalDecisions : 0;
+
+        // Sessions created in the last 24h
+        long recentSessions = sessionRepo.countSessionsCreatedSince(
+                java.time.Instant.now().minusSeconds(86400));
+
+        out.put("total_attacks", totalDecisions);
+        out.put("blocked", blocked);
+        out.put("allowed", allowed);
+        out.put("asr", round(asr));
+        out.put("sessions_24h", recentSessions);
+
+        Map<String, Long> byCategory = new LinkedHashMap<>();
+        for (String c : CATEGORIES) {
+            byCategory.put(c, threats.countByCategory(c));
+        }
+        out.put("threats_by_category", byCategory);
+        out.put("policy_rules_loaded", policy.ruleCount());
+
+        return out;
     }
 }

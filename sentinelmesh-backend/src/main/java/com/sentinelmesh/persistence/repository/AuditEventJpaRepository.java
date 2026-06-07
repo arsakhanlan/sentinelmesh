@@ -52,4 +52,20 @@ public interface AuditEventJpaRepository extends JpaRepository<AuditEventEntity,
      */
     @Query(value = "SELECT pg_advisory_xact_lock(:chainKey)", nativeQuery = true)
     void acquireChainLock(@Param("chainKey") long chainKey);
+
+    /** Count all sentinel_decision events for live ASR computation. */
+    @Query(value = """
+            SELECT COUNT(*) FROM audit_events
+            WHERE kind = 'sentinel_decision'
+            """, nativeQuery = true)
+    long countSentinelDecisions();
+
+    /** Count sentinel_decision events where the outcome was not ALLOW. */
+    @Query(value = """
+            SELECT COUNT(*) FROM audit_events
+            WHERE kind = 'sentinel_decision'
+              AND payload->>'decision' != 'ALLOW'
+            """, nativeQuery = true)
+    long countSentinelDecisionsBlocked();
+
 }
