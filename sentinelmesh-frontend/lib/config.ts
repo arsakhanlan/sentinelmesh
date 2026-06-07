@@ -1,10 +1,10 @@
 // Runtime config. NEXT_PUBLIC_* values are baked at build time; the browser
 // (running on the host) talks directly to the host-mapped backend/agent ports.
 export const CONFIG = {
-  backendUrl: process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080",
-  wsUrl: process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8080",
-  agentUrl: process.env.NEXT_PUBLIC_AGENT_URL || "http://localhost:8090",
-  apiKey: process.env.NEXT_PUBLIC_API_KEY || "dev-api-key-change-me",
+  backendUrl: process.env.NEXT_PUBLIC_BACKEND_URL ?? "",
+  wsUrl: process.env.NEXT_PUBLIC_WS_URL ?? "",
+  agentUrl: process.env.NEXT_PUBLIC_AGENT_URL ?? "/agent",
+  apiKey: process.env.NEXT_PUBLIC_API_KEY ?? "",
 };
 
 export const DECISION_COLOR: Record<string, string> = {

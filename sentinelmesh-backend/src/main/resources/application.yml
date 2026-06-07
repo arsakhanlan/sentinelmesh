@@ -78,6 +78,8 @@ sentinelmesh:
   api-key: ${SENTINELMESH_API_KEY:dev-api-key-change-me}
   # Second seed tenant (acme-travel) — tight daily caps for budget-runaway demos.
   acme-api-key: ${SENTINELMESH_ACME_API_KEY:acme-demo-key-low-budget}
+  # Public-demo key — Caddy injects this for anonymous SOC dashboard visitors.
+  public-demo-key: ${SENTINELMESH_PUBLIC_DEMO_KEY:dev-public-demo-key}
   jwt-secret: ${SENTINELMESH_JWT_SECRET:dev-jwt-secret-change-me-please-32chars}
   l4:
     # stub | azure | openai. If unset, falls back to legacy sentinelmesh.azure.mode.

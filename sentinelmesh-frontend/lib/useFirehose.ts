@@ -23,7 +23,9 @@ export function useFirehose() {
   const closedByUs = useRef(false);
 
   const connect = useCallback(() => {
-    const url = `${CONFIG.wsUrl}/ws/events?token=${encodeURIComponent(CONFIG.apiKey)}`;
+    const base = `${CONFIG.wsUrl}/ws/events`;
+    const qs = CONFIG.apiKey ? `?token=${encodeURIComponent(CONFIG.apiKey)}` : "";
+    const url = base + qs;
     setStatus("connecting");
     let ws: WebSocket;
     try {

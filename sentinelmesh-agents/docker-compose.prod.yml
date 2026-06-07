@@ -158,7 +158,10 @@ services:
 
   # ---- Caddy (the only thing exposed to the internet) --------------------
   caddy:
-    image: caddy:2.8-alpine
+    build:
+      context: ../ops/caddy
+      dockerfile: Dockerfile
+    image: sentinelmesh-caddy:0.1
     container_name: sm-caddy
     depends_on:
       backend:    { condition: service_started }

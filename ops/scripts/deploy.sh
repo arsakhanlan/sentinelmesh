@@ -460,7 +460,7 @@ ${C_GREEN}${C_BOLD}=== SentinelMesh is live ===${C_RESET}
   2. ${C_BOLD}Add an UptimeRobot monitor${C_RESET} for each subdomain (free, 5-monitor tier).
 
   3. ${C_BOLD}Tighten the OpenAI / DeepSeek spend cap${C_RESET}
-       Set a $5–10 / month hard cap in your provider dashboard. Caddy
+       Set a \$5–10 / month hard cap in your provider dashboard. Caddy
        rate-limits at 6 goals/min/IP, but a hard cap is the seatbelt.
 
 EOF

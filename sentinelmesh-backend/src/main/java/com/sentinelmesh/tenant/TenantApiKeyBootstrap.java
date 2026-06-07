@@ -30,6 +30,8 @@ public class TenantApiKeyBootstrap implements ApplicationRunner {
     @Value("${sentinelmesh.api-key:dev-api-key-change-me}") private String globexApiKey;
     /** Second demo tenant — tight budgets for the budget-runaway scenario. */
     @Value("${sentinelmesh.acme-api-key:acme-demo-key-low-budget}") private String acmeApiKey;
+    /** Public-demo key injected by Caddy for anonymous SOC dashboard visitors. */
+    @Value("${sentinelmesh.public-demo-key:dev-public-demo-key}") private String publicDemoKey;
 
     public TenantApiKeyBootstrap(TenantApiKeyJpaRepository keys, Clock clock) {
         this.keys = keys;
@@ -40,8 +42,9 @@ public class TenantApiKeyBootstrap implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         Instant now = clock.instant();
         upsert(TenantIds.GLOBEX, globexApiKey, "globex-default", now);
+        upsert(TenantIds.GLOBEX, publicDemoKey, "public-demo", now);
         upsert(TenantIds.ACME, acmeApiKey, "acme-default", now);
-        log.info("Tenant API keys bootstrapped for globex + acme");
+        log.info("Tenant API keys bootstrapped for globex + public-demo + acme");
     }
 
     private void upsert(UUID tenantId, String rawKey, String label, Instant now) {

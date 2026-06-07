@@ -5,10 +5,11 @@ import type {
 } from "./types";
 
 function headers(): HeadersInit {
-  return {
+  const h: Record<string, string> = {
     "Content-Type": "application/json",
-    "X-API-Key": CONFIG.apiKey,
   };
+  if (CONFIG.apiKey) h["X-API-Key"] = CONFIG.apiKey;
+  return h;
 }
 
 async function json<T>(res: Response): Promise<T> {
